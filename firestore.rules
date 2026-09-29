@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function ownUser(uid) { return signedIn() && request.auth.uid == uid; }
+    function activeUser() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active'
+        && (!('accessExpiresAt' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accessExpiresAt > request.time);
+    }
+    function admin() {
+      return activeUser() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /users/{uid} {
+      allow read: if ownUser(uid) || admin();
+      allow create: if ownUser(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.role == 'user'
+        && request.resource.data.status == 'active'
+        && request.resource.data.email == request.auth.token.email;
+      allow update: if admin() || (ownUser(uid)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.email == resource.data.email);
+      allow delete: if admin();
+    }
+
+    match /content/{id} { allow read: if activeUser() && resource.data.active == true; allow write: if admin(); }
+    match /categories/{id} { allow read: if activeUser() && resource.data.active == true; allow write: if admin(); }
+    match /prompts/{id} { allow read: if activeUser() && resource.data.active == true; allow write: if admin(); }
+    match /tools/{id} { allow read: if activeUser() && resource.data.active == true; allow write: if admin(); }
+    match /challenges/{id} { allow read: if activeUser() && resource.data.active == true; allow write: if admin(); }
+    match /notices/{id} { allow read: if activeUser() && resource.data.active == true; allow write: if admin(); }
+    match /progress/{id} { allow read: if activeUser() && resource.data.userId == request.auth.uid; allow create: if activeUser() && request.resource.data.userId == request.auth.uid; allow update: if activeUser() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid; allow delete: if activeUser() && resource.data.userId == request.auth.uid; }
+    match /purchases/{id} { allow read: if activeUser() && resource.data.userId == request.auth.uid; allow write: if admin(); }
+    match /webhook_events/{id} { allow read, write: if admin(); }
+    match /webhook_diagnostics/{id} { allow read, write: if false; }
+    match /settings/{id} { allow read: if admin(); allow write: if admin(); }
+  }
+}
