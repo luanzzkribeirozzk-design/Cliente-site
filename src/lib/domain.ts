@@ -1,6 +1,6 @@
 import type { Timestamp } from "firebase/firestore";
 
-export type Section = "home" | "methods" | "ai" | "clients" | "calculators" | "guides" | "challenges" | "library" | "profile";
+export type Section = "home" | "methods" | "ai" | "clients" | "calculators" | "guides" | "tools" | "challenges" | "library" | "profile";
 export type FirestoreRow = Record<string, unknown> & { id: string };
 
 export function dateValue(value: unknown): Date | null {
