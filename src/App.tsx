@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
 import { collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, where, type Unsubscribe } from "firebase/firestore";
 import { ArrowRight, BarChart3, BookOpen, Calculator, Check, ChevronRight, Clock3, Copy, Grid2X2, Home, Library, LogOut, Menu, MessageSquareText, Search, Sparkles, Target, UserRound, Wrench, X, Zap } from "lucide-react";
-import { firebaseAuth, firestore } from "./lib/firebase";
+import { configurePersistentLogin, firebaseAuth, firestore } from "./lib/firebase";
 import { accessExpiration, dateValue, daysRemaining, displayDate, isAccessActive, type FirestoreRow, type Section } from "./lib/domain";
 import "./App.css";
 
@@ -18,7 +18,35 @@ function list(value: unknown) { if (Array.isArray(value)) return value.map(Strin
 
 export default function App() {
   const [authUser, setAuthUser] = useState<User | null>(null); const [profile, setProfile] = useState<Profile | null>(null); const [authLoading, setAuthLoading] = useState(true); const [authError, setAuthError] = useState(""); const [section, setSection] = useState<Section>("home"); const [mobileNav, setMobileNav] = useState(false); const [rows, setRows] = useState<Record<string, FirestoreRow[]>>({}); const [dataLoading, setDataLoading] = useState(false); const [dataError, setDataError] = useState("");
-  useEffect(() => { let unsubscribe: (() => void) | undefined; try { unsubscribe = onAuthStateChanged(firebaseAuth(), async (next) => { setAuthUser(next); setAuthLoading(false); setProfile(null); if (next) { try { const snapshot = await getDoc(doc(firestore(), "users", next.uid)); setProfile(snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Profile) : null); } catch { setDataError("Não foi possível ler seu perfil. Atualize a página e tente novamente."); } } }); } catch (error) { setAuthError(error instanceof Error ? error.message : "Firebase não configurado."); setAuthLoading(false); } return () => unsubscribe?.(); }, []);
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let disposed = false;
+    void (async () => {
+      try {
+        const auth = await configurePersistentLogin();
+        if (disposed) return;
+        unsubscribe = onAuthStateChanged(auth, async (next) => {
+          setAuthUser(next);
+          setAuthLoading(false);
+          setProfile(null);
+          if (!next) return;
+          try {
+            const snapshot = await getDoc(doc(firestore(), "users", next.uid));
+            setProfile(snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Profile) : null);
+          } catch {
+            setDataError("Não foi possível ler seu perfil. Atualize a página e tente novamente.");
+          }
+        });
+      } catch (error) {
+        setAuthError(error instanceof Error ? error.message : "Firebase não configurado.");
+        setAuthLoading(false);
+      }
+    })();
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, []);
   useEffect(() => { if (!authUser || !isAccessActive(profile)) return; setDataLoading(true); setDataError(""); const names = ["content", "categories", "prompts", "tools", "challenges", "notices"]; const unsubscribers: Unsubscribe[] = []; try { for (const name of names) { const activeQuery = query(collection(firestore(), name), where("active", "==", true)); unsubscribers.push(onSnapshot(activeQuery, (snapshot) => { setRows((current) => ({ ...current, [name]: asRows(snapshot).sort((a, b) => Number(a.order || 999) - Number(b.order || 999)) })); setDataLoading(false); }, () => { setDataError("Não foi possível carregar todo o conteúdo agora."); setDataLoading(false); })); } } catch (error) { setDataError(error instanceof Error ? error.message : "Erro ao carregar conteúdo."); setDataLoading(false); } return () => unsubscribers.forEach((unsubscribe) => unsubscribe()); }, [authUser, profile]);
   if (authLoading) return <div className="center-screen"><div className="loader" /><span>Preparando seu espaço…</span></div>;
   if (!authUser) return <LoginScreen error={authError} onError={setAuthError} />;

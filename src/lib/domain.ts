@@ -13,10 +13,7 @@ export function dateValue(value: unknown): Date | null {
 
 export function accessExpiration(user: FirestoreRow | null): Date | null {
   const explicit = dateValue(user?.accessExpiresAt || user?.expiresAt);
-  if (explicit) return explicit;
-  const created = dateValue(user?.createdAt);
-  if (!created) return null;
-  return new Date(created.getTime() + 30 * 24 * 60 * 60 * 1000);
+  return explicit;
 }
 
 export function isAccessActive(user: FirestoreRow | null, now = new Date()) {
